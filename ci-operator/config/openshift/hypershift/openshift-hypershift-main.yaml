@@ -75,6 +75,12 @@ releases:
       include_built_images: true
       name: "4.11"
       namespace: ocp
+  multi-latest:
+    candidate:
+      architecture: multi
+      product: ocp
+      stream: nightly
+      version: "4.12"
 resources:
   '*':
     limits:
@@ -231,6 +237,65 @@ tests:
   skip_if_only_changed: (^(docs|examples|enhancements)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)
   steps:
     workflow: hypershift-aws-e2e-nested
+- as: e2e-powervs
+  cluster_claim:
+    architecture: amd64
+    as: not_latest
+    cloud: aws
+    owner: hypershift
+    product: ocp
+    timeout: 1h30m0s
+    version: "4.9"
+  optional: true
+  skip_if_only_changed: (^(docs|examples|enhancements)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)
+  steps:
+    test:
+    - as: test-e2e
+      cli: latest
+      commands: |-
+        # Installing hypershift operator
+        bin/hypershift install --hypershift-image ${HYPERSHIFT_RELEASE_LATEST}
+
+        # Setting up credentials
+        export IBMCLOUD_CREDENTIALS=/etc/hypershift-pool-powervs-credentials/credentials
+        
+        # Complie the e2e tests
+        make e2e
+
+        # Running e2e test
+        bin/test-e2e \
+        -test.v \
+        -test.timeout=2h10m \
+        -test.run=TestCreateCluster \
+        --network-type=OpenShiftSDN \
+        --e2e.platform=PowerVS \
+        --e2e.pull-secret-file=/etc/ci-pull-credentials/.dockerconfigjson \
+        --e2e.base-domain=hypershift-ppc64le.com \
+        --e2e.latest-release-image=${OCP_IMAGE_MULTI} \
+        --e2e.node-pool-replicas=2 \
+        --e2e.powervs-resource-group=ibm-hypershift-dev \
+        --e2e.powervs-region=tok \
+        --e2e.powervs-zone=tok04 \
+        --e2e.powervs-vpc-region=jp-tok
+      credentials:
+      - mount_path: /etc/hypershift-pool-powervs-credentials
+        name: hypershift-pool-powervs-credentials
+        namespace: test-credentials
+      - mount_path: /etc/ci-pull-credentials
+        name: ci-pull-credentials
+        namespace: test-credentials
+      dependencies:
+      - env: OCP_IMAGE_MULTI
+        name: release:multi-latest
+      - env: HYPERSHIFT_RELEASE_LATEST
+        name: hypershift-operator
+      from: bin
+      grace_period: 30m0s
+      resources:
+        requests:
+          cpu: 100m
+      timeout: 2h30m0s
+    workflow: generic-claim
 zz_generated_metadata:
   branch: main
   org: openshift
